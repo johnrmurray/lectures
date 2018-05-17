@@ -1,5 +1,6 @@
 import java.util.LinkedList;
 
+
 /**
  * A simple work queue implementation based on the IBM developerWorks article by
  * Brian Goetz. It is up to the user of this class to keep track of whether
@@ -10,7 +11,6 @@ import java.util.LinkedList;
  *      Theory and Practice: Thread Pools and Work Queues</a>
  */
 public class WorkQueue {
-
 	/**
 	 * Pool of worker threads that will wait in the background until work is
 	 * available.
@@ -18,6 +18,7 @@ public class WorkQueue {
 	private final PoolWorker[] workers;
 
 	/** Queue of pending work requests. */
+
 	private final LinkedList<Runnable> queue;
 
 	/** Used to signal the queue should be shutdown. */
@@ -26,11 +27,14 @@ public class WorkQueue {
 	/** The default number of threads to use when not specified. */
 	public static final int DEFAULT = 5;
 
+	private int pending;
+
 	/**
 	 * Starts a work queue with the default number of threads.
 	 *
 	 * @see #WorkQueue(int)
 	 */
+	
 	public WorkQueue() {
 		this(DEFAULT);
 	}
@@ -44,8 +48,8 @@ public class WorkQueue {
 	public WorkQueue(int threads) {
 		this.queue = new LinkedList<Runnable>();
 		this.workers = new PoolWorker[threads];
-
-		shutdown = false;
+		this.pending = 0;
+		this.shutdown = false;
 
 		// start the threads so they are waiting in the background
 		for (int i = 0; i < threads; i++) {
@@ -62,9 +66,51 @@ public class WorkQueue {
 	 *            work request (in the form of a {@link Runnable} object)
 	 */
 	public void execute(Runnable r) {
+		incrementPending();
 		synchronized (queue) {
 			queue.addLast(r);
 			queue.notifyAll();
+		}
+	}
+
+	/**
+	 * Waits for all pending work to be finished.
+	 */
+	
+	public synchronized void incrementPending() {
+		pending++;
+	}
+	
+	private void decrementPending() {
+		synchronized (queue) {
+			pending--;
+			if (pending <= 0) {
+				queue.notifyAll();
+
+			}
+		}
+	}
+	
+	public void finish() {
+		/*
+		 * TODO
+		 * (1) Add pending variable and initialize properly.
+		 * (2) Increment pending variable (safely) where appropriate.
+		 * (3) Decrement pending variable (safely) where appropriate.
+		 * (4) Wait until all pending work is complete in finish() method.
+		 * 
+		 * Hint: Use the same lock for synchronization that is already being
+		 * used in this class. This helps prevent deadlock, but comes with
+		 * an efficiency cost.
+		 */
+		synchronized (queue) {
+			while (pending > 0) {
+				try {
+					queue.wait();
+				} catch (InterruptedException e) {
+					System.out.println("something went wrong");
+				}
+			}
 		}
 	}
 
@@ -107,9 +153,8 @@ public class WorkQueue {
 					while (queue.isEmpty() && !shutdown) {
 						try {
 							queue.wait();
-						}
-						catch (InterruptedException ex) {
-							System.err.println("Warning: Work queue interrupted " + "while waiting.");
+						} catch (InterruptedException ex) {
+							System.err.println("Warning: Work queue interrupted.");
 							Thread.currentThread().interrupt();
 						}
 					}
@@ -119,19 +164,19 @@ public class WorkQueue {
 
 					if (shutdown) {
 						break;
-					}
-					else {
+					} else {
 						r = queue.removeFirst();
 					}
 				}
 
 				try {
 					r.run();
-				}
-				catch (RuntimeException ex) {
+				} catch (RuntimeException ex) {
 					// catch runtime exceptions to avoid leaking threads
-					System.err.println("Warning: Work queue encountered an " + "exception while running.");
+					// System.err.println("Warning: Work queue encountered an "
+					// + "exception while running.");
 				}
+				decrementPending();
 			}
 		}
 	}
